@@ -25,30 +25,46 @@ async def scrape_google_maps(business_type: str, location: str, max_results: int
             # Use 'commit' to ensure we at least start leading, then wait manually
             await page.goto(url, timeout=90000)
             print("Page navigation initiated...")
-            await page.wait_for_load_state("domcontentloaded")
-            print("DOM content loaded.")
-            await page.wait_for_timeout(5000)
+            await page.wait_for_load_state("networkidle", timeout=60000)
+            print("Page fully loaded (networkidle).")
         except Exception as e:
-            print(f"Navigation error: {e}")
-            await browser.close()
-            return []
+            print(f"Navigation warning: {e}")
+            # Continue anyway as DOM might be ready
+            
+        print(f"Page title: {await page.title()}")
+        
+        # Check if we were blocked
+        if "Google Maps" not in await page.title() and "Google" not in await page.title():
+            print("Error: Might be blocked by bot detection. Title mismatch.")
+            # For debugging, let's not exit yet and see what we have
         
         leads = []
         
-        # Scrolling logic
         # Google Maps results are usually in a scrollable div
         scrollable_div_selector = 'div[role="feed"]'
+        article_selector = 'div[role="article"]'
         
+        # Wait for either results or "not found" message
+        try:
+            print(f"Waiting for selector: {article_selector}...")
+            await page.wait_for_selector(article_selector, timeout=15000)
+        except Exception:
+            print("Timeout waiting for article articles. Might be an empty search or bot block.")
+            # Check for "Results for..." or "Google Maps" title to see if we reached the right page
+            # Sometimes maps uses different selectors in headless mode
+            pass
+            
         processed_count = 0
         
         while processed_count < max_results:
             # Find all result items
-            results = await page.query_selector_all('div[role="article"]')
+            results = await page.query_selector_all(article_selector)
             
             if not results:
+                print("No article results found. Exiting scrape loop.")
                 break
                 
-            for result in results[processed_count:]:
+            print(f"Found {len(results)} potential results.")
                 if processed_count >= max_results:
                     break
                 

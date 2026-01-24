@@ -42,8 +42,13 @@ async def process_campaign():
         b_type = parts[0]
         b_loc = parts[1] if len(parts) > 1 else ""
         
-        # Scrape a small batch per query to rotate through search types
-        leads = await scrape_google_maps(b_type, b_loc, max_results=10)
+        try:
+            # Scrape a small batch per query to rotate through search types
+            leads = await scrape_google_maps(b_type, b_loc, max_results=10)
+            print(f"   [SCAPER] Found {len(leads) if leads else 0} leads (after basic filter).")
+        except Exception as e:
+            print(f"   [ORCHESTRATOR] Scrape failed for '{query}': {e}")
+            continue
         
         # 2. Filter (No website + basic quality)
         filtered_leads = filter_leads(leads)

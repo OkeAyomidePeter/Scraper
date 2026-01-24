@@ -47,27 +47,25 @@ nano .env
 ```bash
 cd ../whatsapp-service
 pnpm install
-# Install Chrome for Baileys
-pnpm exec puppeteer browsers install chrome
+# Note: Baileys is socket-based and does NOT require a browser installation.
 ```
 
 ## 3. Chrome & Playwright (Headless Setup)
 
-EC2 instances require specific dependencies for headless Chrome.
+The **Scraper** requires headless Chrome. Perform this in the backend directory.
 
 ```bash
 cd ../backend
-uv run playwright install-deps
-uv run playwright install chromium
+uv run playwright install --with-deps chromium
 ```
 
 ## 4. Systemd Services (Automatic Start)
 
-We will create two services: one for the WhatsApp gateway and one for the Orchestrator.
+We'll create the service files in your project directory first, then copy them to the system folder.
 
 ### A. WhatsApp Service
 
-Create `/etc/systemd/system/outreach-whatsapp.service`:
+Create `whatsapp.service` in the root:
 
 ```ini
 [Unit]
@@ -77,7 +75,7 @@ After=network.target
 [Service]
 Type=simple
 User=ubuntu
-WorkingDirectory=/home/ubuntu/outreach-system/whatsapp-service
+WorkingDirectory=/home/ubuntu/Scraper/whatsapp-service
 ExecStart=/usr/bin/pnpm start
 Restart=on-failure
 
@@ -85,29 +83,37 @@ Restart=on-failure
 WantedBy=multi-user.target
 ```
 
-### B. Orchestrator Bot
+### B. Orchestrator Service
 
-Create `/etc/systemd/system/outreach-orchestrator.service`:
+Create `orchestrator.service` in the root:
 
 ```ini
 [Unit]
 Description=Outreach Orchestrator & Telegram Bot
-After=outreach-whatsapp.service
+After=whatsapp.service
 
 [Service]
 Type=simple
 User=ubuntu
-WorkingDirectory=/home/ubuntu/outreach-system/backend
-ExecStart=/home/ubuntu/.cargo/bin/uv run orchestrator.py
+WorkingDirectory=/home/ubuntu/Scraper/backend
+ExecStart=/home/ubuntu/.local/bin/uv run orchestrator.py
 Restart=always
+
+[Install]
+WantedBy=multi-user.target
 ```
 
-### Enable Services
+### C. Enable & Start Services
 
 ```bash
+# Copy to system folder
+sudo cp whatsapp.service /etc/systemd/system/
+sudo cp orchestrator.service /etc/systemd/system/
+
+# Reload and start
 sudo systemctl daemon-reload
-sudo systemctl enable outreach-whatsapp
-sudo systemctl start outreach-whatsapp
+sudo systemctl enable whatsapp orchestrator
+sudo systemctl start whatsapp orchestrator
 ```
 
 ## 5. Remote Authentication (One-time)
