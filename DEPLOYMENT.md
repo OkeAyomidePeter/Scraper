@@ -83,13 +83,13 @@ Restart=on-failure
 WantedBy=multi-user.target
 ```
 
-### B. Orchestrator Service
+### B. Orchestrator Service (Lead Queueing)
 
 Create `orchestrator.service` in the root:
 
 ```ini
 [Unit]
-Description=Outreach Orchestrator & Telegram Bot
+Description=Outreach Orchestrator (Scraper & Queue)
 After=whatsapp.service
 
 [Service]
@@ -103,17 +103,56 @@ Restart=always
 WantedBy=multi-user.target
 ```
 
-### C. Enable & Start Services
+### C. Sender Service (Anti-Detection)
+
+Create `sender.service` in the root:
+
+```ini
+[Unit]
+Description=Outreach Slow-Drip Sender
+After=whatsapp.service
+
+[Service]
+Type=simple
+User=ubuntu
+WorkingDirectory=/home/ubuntu/Scraper/backend
+ExecStart=/home/ubuntu/.local/bin/uv run sender.py
+Restart=always
+
+[Install]
+WantedBy=multi-user.target
+```
+
+### D. Telegram Bot Service (Remote Monitor)
+
+Create `telegram.service` in the root:
+
+```ini
+[Unit]
+Description=Outreach Telegram Monitor Bot
+After=network.target
+
+[Service]
+Type=simple
+User=ubuntu
+WorkingDirectory=/home/ubuntu/Scraper/backend
+ExecStart=/home/ubuntu/.local/bin/uv run telegram_bot.py
+Restart=always
+
+[Install]
+WantedBy=multi-user.target
+```
+
+### E. Enable & Start Services
 
 ```bash
-# Copy to system folder
-sudo cp whatsapp.service /etc/systemd/system/
-sudo cp orchestrator.service /etc/systemd/system/
+# Copy all to system folder
+sudo cp whatsapp.service orchestrator.service sender.service telegram.service /etc/systemd/system/
 
-# Reload and start
+# Reload and start all four
 sudo systemctl daemon-reload
-sudo systemctl enable whatsapp orchestrator
-sudo systemctl start whatsapp orchestrator
+sudo systemctl enable whatsapp orchestrator sender telegram
+sudo systemctl start whatsapp orchestrator sender telegram
 ```
 
 ## 5. Remote Authentication (One-time)

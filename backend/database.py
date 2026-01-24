@@ -21,7 +21,8 @@ def init_db():
             reviews INTEGER,
             category TEXT,
             maps_url TEXT,
-            status TEXT DEFAULT 'new', -- new, generating, sent, failed
+            status TEXT DEFAULT 'new', -- new, queued, sending, sent, failed
+            generated_message TEXT,
             last_messaged_at DATETIME,
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP
         )
@@ -73,7 +74,50 @@ def is_lead_already_messaged(normalized_phone):
     cursor.execute("SELECT status FROM leads WHERE normalized_phone = ?", (normalized_phone,))
     result = cursor.fetchone()
     conn.close()
-    return result is not None and result[0] in ['sent', 'generating']
+    return result is not None and result[0] in ['sent', 'queued', 'sending']
+
+def queue_message(normalized_phone, message):
+    """Stores the generated message and marks it as queued."""
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    try:
+        cursor.execute("""
+            UPDATE leads 
+            SET generated_message = ?, status = 'queued' 
+            WHERE normalized_phone = ?
+        """, (message, normalized_phone))
+        conn.commit()
+    finally:
+        conn.close()
+
+def get_next_queued_message():
+    """Retrieves the next message from the queue and marks it as 'sending'."""
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute("""
+        SELECT normalized_phone, generated_message, name 
+        FROM leads 
+        WHERE status = 'queued' 
+        ORDER BY created_at ASC 
+        LIMIT 1
+    """)
+    row = cursor.fetchone()
+    if row:
+        phone = row[0]
+        cursor.execute("UPDATE leads SET status = 'sending' WHERE normalized_phone = ?", (phone,))
+        conn.commit()
+        conn.close()
+        return {"phone": row[0], "message": row[1], "name": row[2]}
+    conn.close()
+    return None
+
+def mark_as_failed(normalized_phone):
+    """Marks a message as failed."""
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute("UPDATE leads SET status = 'failed' WHERE normalized_phone = ?", (normalized_phone,))
+    conn.commit()
+    conn.close()
 
 def mark_as_sent(normalized_phone):
     """Updates status to sent and increments daily count."""
@@ -106,10 +150,14 @@ def get_daily_status():
     cursor.execute("SELECT COUNT(*) FROM leads")
     total_leads = cursor.fetchone()[0]
     
+    cursor.execute("SELECT COUNT(*) FROM leads WHERE status = 'queued'")
+    queued_count = cursor.fetchone()[0]
+    
     conn.close()
     return {
         "sent_today": sent_today,
-        "total_leads": total_leads
+        "total_leads": total_leads,
+        "queued": queued_count
     }
 
 if __name__ == "__main__":

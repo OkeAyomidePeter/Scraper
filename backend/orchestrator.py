@@ -6,7 +6,7 @@ from datetime import date
 import requests
 from scraper import scrape_google_maps
 from ai_agent import generate_outreach_message
-from database import init_db, save_lead, is_lead_already_messaged, mark_as_sent, get_daily_status
+from database import init_db, save_lead, is_lead_already_messaged, queue_message, get_daily_status
 from processor import filter_leads
 
 # Config
@@ -73,32 +73,19 @@ async def process_campaign():
 
             print(f"   > Generating outreach for: {lead['name']} ({normalized_phone})")
             
-            # 4. AI Message Generation
+            # 4. AI Message Generation (Failsafe included in ai_agent)
             message = generate_outreach_message(lead)
-            if "Rate limit reached" in message:
-                print("Gemini rate limit hit. Waiting 60 seconds...")
-                await asyncio.sleep(60)
-                message = generate_outreach_message(lead) # Retry once
 
-            # 5. WhatsApp Dispatch
-            try:
-                payload = {"phone": normalized_phone, "message": message}
-                response = requests.post(WHATSAPP_SERVICE_URL, json=payload, timeout=30)
-                
-                if response.status_code == 200:
-                    print(f"   [SUCCESS] Message sent to {lead['name']}")
-                    mark_as_sent(normalized_phone)
-                    # Human-like delay between messages
-                    await asyncio.sleep(random.randint(30, 45))
-                else:
-                    print(f"   [FAILED] WhatsApp Service Error ({response.status_code}) for {lead['name']}")
-                    
-            except Exception as e:
-                print(f"   [ERROR] Dispatch failed for {lead['name']}: {e}")
+            # 5. Queue for Sender
+            queue_message(normalized_phone, message)
+            print(f"   [QUEUED] Outreach ready for {lead['name']}")
+            
+            # Anti-detection: random sleep even during generation
+            await asyncio.sleep(random.randint(5, 15))
 
-    print("\n--- Campaign Cycle Finished ---")
+    print("\n--- Campaign Cycle Finished (Leads Queued) ---")
     final_stats = get_daily_status()
-    print(f"Total Sent Today: {final_stats['sent_today']}")
+    print(f"Total leads in history: {final_stats['total_leads']}")
 
 if __name__ == "__main__":
     asyncio.run(process_campaign())

@@ -46,13 +46,43 @@ class RateLimiter:
 # Global rate limiter
 limiter = RateLimiter(rpm_limit=10, daily_limit=250)
 
+def get_fallback_message(lead: dict) -> str:
+    """Provides a high-quality, personalized fallback when AI fails."""
+    business_name = lead.get("name", "there")
+    sender_name = "Oke Ayomide Peter"
+    company_name = "Invictus Global"
+    
+    # Simple logic to varied fallback
+    try:
+        rating = float(lead.get("rating", 0.0))
+    except:
+        rating = 0.0
+
+    if rating >= 4.0:
+        return (
+            f"Hello {business_name}! 👋 I'm {sender_name} from {company_name}. "
+            f"I saw your impressive {rating}-star rating on Google Maps. "
+            "I noticed you don't have a website yet—I help top-rated Nigerian businesses "
+            "build a professional digital home to reach even more customers. "
+            "Would you be open to a quick chat? 🚀"
+        )
+    else:
+        return (
+            f"Hello {business_name}! 👋 I'm {sender_name} from {company_name}. "
+            "I was looking at your business listing on Google Maps and noticed you "
+            "don't have a professional website yet. I help local businesses in Nigeria "
+            "build a digital presence that builds trust and brings in more customers. "
+            "Would you be open to a brief chat about this? ✨"
+        )
+
 def generate_outreach_message(lead: dict) -> str:
     """
-    Generates a personalized, "homely" outreach message using Google Gemini.
-    Selects a specific prompt template based on business reputation.
+    Generates a personalized outreach message using Google Gemini.
+    Returns a high-quality fallback if API fails or rate limit is reached.
     """
     if not limiter.wait_if_needed():
-        return "Rate limit reached."
+        print(f"Rate limit hit for {lead.get('name')}. Using fallback.")
+        return get_fallback_message(lead)
 
     business_name = lead.get("name", "there")
     try:
@@ -72,71 +102,40 @@ def generate_outreach_message(lead: dict) -> str:
 
     # Reputation-aware Prompt Logic
     if rating >= 4.0 and reviews >= 5:
-        # High Reputation
-        reputation_focus = (
-            f"Reference their exceptional {rating}-star reputation and {reviews} reviews on Google Maps. "
-            "Congratulate them on being a top-rated business in their area. "
-            "Highlight how a professional website will solidify this elite status."
-        )
+        reputation_focus = f"Reference their exceptional {rating}-star reputation and {reviews} reviews. Congratulate them."
     elif rating > 0:
-        # Mid Reputation
-        reputation_focus = (
-            f"Reference their {rating}-star rating as a great sign of trust. "
-            "Encourage them that they are already doing well and a professional website "
-            "is the missing piece to competing with the biggest names in the industry."
-        )
+        reputation_focus = f"Reference their {rating}-star rating as a great sign of trust."
     else:
-        # No/Low Reputation
-        reputation_focus = (
-            "Acknowledge their presence on Google Maps as a visible business. "
-            "Focus heavily on how a professional website establishes initial credibility and trust "
-            "for new customers who don't see many reviews yet."
-        )
+        reputation_focus = "Focus on how a professional website establishes initial credibility."
 
-    model = genai.GenerativeModel('gemini-2.5-flash-lite')
+    model = genai.GenerativeModel('gemini-1.5-flash-lite')
     
     prompt = f"""
     You are {sender_name}, representing {company_name}, a professional tech consultancy in Nigeria. 
-    Your goal is to help reputable local businesses transition to a professional digital presence.
+    Write a short, professional, warm WhatsApp message to {business_name}.
     
-    Write a short, professional, yet warm WhatsApp message to a business owner.
-    
-    Business Details:
-    - Name: {business_name}
-    - Category: {category}
-    - Google Maps Stats: {rating} stars, {reviews} reviews.
-    
-    Outreach Strategy:
-    {reputation_focus}
+    Details: {business_name}, {category}, {rating} stars, {reviews} reviews.
+    Strategy: {reputation_focus}
     
     Trust-Building Context (Nigeria):
-    Nigerian business owners are often skeptical of online outreach. To build trust:
     1. Introduce yourself clearly as {sender_name} from {company_name}.
     2. Reference their specific Google Maps achievements genuinely.
-    3. Keep it "homely" (local professional tone/warmth) but strictly professional.
-    4. NO 'Dear Sir/Ma'. Use a warm opening like 'Hello {business_name} team' or just 'Hi there!'.
-    5. NO pidgin, NO excessive emojis. Keep it clean and high-value.
+    3. Keep it warm but strictly professional. No 'Dear Sir/Ma'.
+    4. NO placeholders like '[Your Name]'.
     
-    Requirements:
-    - Length: CONCISE (WhatsApp optimized).
-    - Call to Action: Ask if they'd be open to a brief chat or call to discuss growth.
-    - Important: Focus ONLY on {business_name}.
-    - Important: NO placeholders like '[Your Name]'.
+    Length: CONCISE (WhatsApp optimized).
     """
 
     try:
         response = model.generate_content(prompt)
-        return response.text.strip()
+        # Verify response isn't empty or an error
+        if response and response.text:
+            return response.text.strip()
+        else:
+            raise ValueError("Empty AI response")
     except Exception as e:
-        print(f"Error generating message with Gemini: {e}")
-        # Homely fallback template
-        return (
-            f"Hello {business_name}! 👋 I'm {sender_name} from {company_name}. "
-            f"I was checking your business on Google Maps and saw your {rating} rating. "
-            "I noticed you don't have a website yet—I help local businesses in Nigeria "
-            "build a professional digital home to establish more trust and reach more customers. "
-            "Would you be open to a quick chat? 🚀"
-        )
+        print(f"AI Generation failed for {business_name}: {e}. Using fallback.")
+        return get_fallback_message(lead)
 
 if __name__ == "__main__":
     # Test cases for different reputations
