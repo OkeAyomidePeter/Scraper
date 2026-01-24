@@ -147,7 +147,7 @@ WantedBy=multi-user.target
 
 ```bash
 # Copy all to system folder
-sudo cp whatsapp.service orchestrator.service sender.service telegram.service /etc/systemd/system/
+sudo cp sender.service telegram.service /etc/systemd/system/
 
 # Reload and start all four
 sudo systemctl daemon-reload
@@ -166,4 +166,4 @@ sudo systemctl start whatsapp orchestrator sender telegram
 
 - Update `backend/search.txt` to change search targets.
 - Monitor progress via your **Telegram Bot** using the `/stats` command.
-- The system enforces a **100 messages/day** limit automatically.
+- The system enforces a **5 messages/day** limit automatically.

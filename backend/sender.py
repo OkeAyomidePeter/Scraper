@@ -5,7 +5,7 @@ import time
 from database import get_next_queued_message, mark_as_sent, mark_as_failed, get_daily_status
 
 # Config
-DAILY_MESSAGES_LIMIT = 100
+DAILY_MESSAGES_LIMIT = 5
 WHATSAPP_SERVICE_URL = "http://localhost:3000/send"
 
 async def slow_sender():

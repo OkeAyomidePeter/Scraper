@@ -10,7 +10,7 @@ from database import init_db, save_lead, is_lead_already_messaged, queue_message
 from processor import filter_leads
 
 # Config
-DAILY_MESSAGES_LIMIT = 100
+DAILY_MESSAGES_LIMIT = 5
 WHATSAPP_SERVICE_URL = "http://localhost:3000/send"
 SEARCH_FILE = os.path.join(os.path.dirname(__file__), "search.txt")
 

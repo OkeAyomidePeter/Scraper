@@ -34,7 +34,7 @@ async def format_stats_message():
     data = get_daily_status()
     return (
         f"📊 *Daily Outreach Metrics*\n\n"
-        f"✅ *Sent Today:* {data['sent_today']}/100\n"
+        f"✅ *Sent Today:* {data['sent_today']}/5\n"
         f"⏳ *Currently Queued:* {data['queued']}\n"
         f"📂 *Total CRM Leads:* {data['total_leads']}\n\n"
         f"📅 _System: Active on Amazon EC2_"
