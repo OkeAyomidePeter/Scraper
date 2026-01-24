@@ -33,10 +33,29 @@ async def scrape_google_maps(business_type: str, location: str, max_results: int
             
         print(f"Page title: {await page.title()}")
         
-        # Check if we were blocked
-        if "Google Maps" not in await page.title() and "Google" not in await page.title():
-            print("Error: Might be blocked by bot detection. Title mismatch.")
-            # For debugging, let's not exit yet and see what we have
+        # --- Handle Google Consent/Cookie Wall ---
+        if "Innan du fortsätter" in await page.title() or "Before you continue" in await page.title() or "consent.google.com" in page.url:
+            print("Detected Google Consent Wall. Attempting to bypass...")
+            try:
+                # Look for "Accept all" or Swedish "Godkänn alla" / "Jag godkänner"
+                # We use a broad selector for buttons to find the right one
+                await page.wait_for_selector('button', timeout=10000)
+                buttons = await page.query_selector_all('button')
+                for btn in buttons:
+                    text = await btn.inner_text()
+                    # Check for common "Accept" terms in English and Swedish
+                    if any(term in text for term in ["Accept all", "I agree", "Agree", "Godkänn alla", "Jag godkänner", "Godkänn"]):
+                        print(f"Found consent button: '{text}'. Clicking...")
+                        await btn.click()
+                        await page.wait_for_load_state("networkidle", timeout=30000)
+                        break
+            except Exception as e:
+                print(f"Failed to bypass consent wall: {e}")
+        
+        # Check if we were blocked or still on the wrong page
+        final_title = await page.title()
+        if "Google Maps" not in final_title and "Google" in final_title and "Maps" not in final_title:
+             print(f"Warning: Might still be stuck on Google home/consent page. Title: {final_title}")
         
         leads = []
         
