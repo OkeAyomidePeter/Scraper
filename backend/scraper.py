@@ -65,6 +65,8 @@ async def scrape_google_maps(business_type: str, location: str, max_results: int
                 break
                 
             print(f"Found {len(results)} potential results.")
+            
+            for result in results[processed_count:]:
                 if processed_count >= max_results:
                     break
                 
