@@ -14,8 +14,33 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 logger = logging.getLogger(__name__)
 
 # Rate limiting configuration
-GEMINI_CALLS_PER_MINUTE = 15  # Gemini has higher limits
+GEMINI_CALLS_PER_MINUTE = 5
+GEMINI_CALLS_PER_DAY = 25
 ONE_MINUTE = 60
+DAILY_USAGE_FILE = os.path.join(os.path.dirname(__file__), "data", "usage.json")
+
+def get_daily_usage() -> Dict:
+    """Loads daily usage from a persistent file."""
+    os.makedirs(os.path.dirname(DAILY_USAGE_FILE), exist_ok=True)
+    if not os.path.exists(DAILY_USAGE_FILE):
+        return {"count": 0, "date": time.strftime("%Y-%m-%d")}
+    
+    with open(DAILY_USAGE_FILE, "r") as f:
+        try:
+            usage = json.load(f)
+            # Reset if it's a new day
+            if usage.get("date") != time.strftime("%Y-%m-%d"):
+                return {"count": 0, "date": time.strftime("%Y-%m-%d")}
+            return usage
+        except:
+            return {"count": 0, "date": time.strftime("%Y-%m-%d")}
+
+def increment_usage():
+    """Increments the daily usage counter."""
+    usage = get_daily_usage()
+    usage["count"] += 1
+    with open(DAILY_USAGE_FILE, "w") as f:
+        json.dump(usage, f)
 
 # Configure API clients
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
@@ -165,6 +190,12 @@ def generate_with_gemini(prompt: str, channel: str) -> Optional[Dict]:
     if not gemini_client:
         return None
     
+    # Check daily limit
+    usage = get_daily_usage()
+    if usage["count"] >= GEMINI_CALLS_PER_DAY:
+        logger.warning(f"Daily AI limit reached ({GEMINI_CALLS_PER_DAY}). Using fallback.")
+        return None
+    
     try:
         response = gemini_client.models.generate_content(
             model='gemini-2.5-flash-lite',
@@ -181,6 +212,10 @@ def generate_with_gemini(prompt: str, channel: str) -> Optional[Dict]:
         
         result = json.loads(response_text.strip())
         logger.info(f"Generated {channel} message via Gemini")
+        
+        # Increment daily usage
+        increment_usage()
+        
         return result
         
     except Exception as e:
