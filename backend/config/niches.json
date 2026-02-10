@@ -1,0 +1,127 @@
+{
+  "healthcare": {
+    "keywords": [
+      "clinic",
+      "dental",
+      "doctor",
+      "hospital",
+      "laboratory",
+      "optician",
+      "physiotherapy",
+      "pharmacy"
+    ],
+    "pain_points": [
+      "missed appointments",
+      "no automated follow-ups",
+      "hard to track patient history",
+      "few online bookings"
+    ],
+    "service_focus": "appointment reminders, follow-ups, online bookings",
+    "key_benefit": "reduce missed appointments and fill schedules",
+    "tone": "polite",
+    "search_queries": [
+      "Clinics in Abuja",
+      "Dental offices in Abuja",
+      "Physiotherapy centers in Abuja",
+      "Medical laboratories in Abuja",
+      "Opticians in Abuja"
+    ]
+  },
+  "personal_care": {
+    "keywords": ["salon", "barber", "spa", "beauty", "nail", "hair"],
+    "pain_points": [
+      "no-shows",
+      "no easy booking method",
+      "hard to run promos",
+      "need high repeat customers"
+    ],
+    "service_focus": "booking automation, reminders, discounts",
+    "key_benefit": "keep your chairs filled with fewer no-shows",
+    "tone": "neutral",
+    "search_queries": [
+      "Hair salons in Abuja",
+      "Barber shops in Abuja",
+      "Nail salons in Abuja",
+      "Spas in Abuja",
+      "Beauty parlors in Abuja"
+    ]
+  },
+  "food_beverage": {
+    "keywords": [
+      "restaurant",
+      "cafe",
+      "eatery",
+      "bakery",
+      "fast food",
+      "catering"
+    ],
+    "pain_points": [
+      "hard to get repeat diners",
+      "no digital menu",
+      "losing orders to competitors",
+      "hard to collect reviews"
+    ],
+    "service_focus": "digital menu, order automation, promos",
+    "key_benefit": "boost orders and customer return rate",
+    "tone": "direct",
+    "search_queries": [
+      "Restaurants in Abuja",
+      "Fast food in Abuja",
+      "Cafes in Abuja",
+      "Local eateries in Abuja",
+      "Bakeries in Abuja"
+    ]
+  },
+  "automotive": {
+    "keywords": [
+      "auto repair",
+      "car wash",
+      "mechanic",
+      "auto electrician",
+      "tire",
+      "battery"
+    ],
+    "pain_points": [
+      "no consistent bookings",
+      "forget follow-ups on maintenance",
+      "hard to upsell existing customers",
+      "no digital presence"
+    ],
+    "service_focus": "booking automation, reminders, upselling",
+    "key_benefit": "increase repeat services and revenue",
+    "tone": "neutral",
+    "search_queries": [
+      "Auto repair shops in Abuja",
+      "Car wash services in Abuja",
+      "Mobile mechanics in Abuja",
+      "Auto electricians in Abuja",
+      "Tire shops in Abuja"
+    ]
+  },
+  "events": {
+    "keywords": [
+      "event planner",
+      "photographer",
+      "videographer",
+      "dj",
+      "decorator",
+      "catering"
+    ],
+    "pain_points": [
+      "losing leads to slow follow-up",
+      "no centralized customer inbox",
+      "hard to showcase past work",
+      "no booking automation"
+    ],
+    "service_focus": "lead capture, follow-ups, reminders",
+    "key_benefit": "book more events without manual chasing",
+    "tone": "polite",
+    "search_queries": [
+      "Event planners in Abuja",
+      "Wedding photographers in Abuja",
+      "DJs in Abuja",
+      "Videographers in Abuja",
+      "Party decorators in Abuja"
+    ]
+  }
+}

@@ -1,35 +1,41 @@
-from sqlalchemy import create_engine, Column, Integer, String, Text, DateTime, Float, Boolean
+from datetime import datetime
+import uuid
+from sqlalchemy import Column, String, DateTime, Text, Float, Boolean
 from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import sessionmaker
-import datetime
-
-SQLALCHEMY_DATABASE_URL = "sqlite:///./leads.db"
-
-engine = create_engine(
-    SQLALCHEMY_DATABASE_URL, connect_args={"check_same_thread": False}
-)
-SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+from sqlalchemy.dialects.postgresql import UUID
 
 Base = declarative_base()
 
 class Lead(Base):
-    __tablename__ = "leads"
+    __tablename__ = 'leads'
 
-    id = Column(String, primary_key=True, index=True)
-    name = Column(String, index=True)
-    category = Column(String)
-    location = Column(String)
-    phone = Column(String)
-    normalized_phone = Column(String, index=True)
-    address = Column(Text)
-    website = Column(String)
-    has_website = Column(Boolean, default=False)
-    rating = Column(Float, default=0.0)
-    reviews = Column(Integer, default=0)
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    business_name = Column(String(255), nullable=False)
+    category = Column(String(255))
+    phone_number = Column(String(50))
+    email = Column(String(255))
+    website_url = Column(Text)
     maps_url = Column(Text)
-    status = Column(String, default="new") # new, message_generated, sent, failed, responded
-    generated_message = Column(Text)
-    priority_score = Column(Integer, default=0)
-    created_at = Column(DateTime, default=datetime.datetime.utcnow)
+    rating = Column(String(10))
+    reviews = Column(String(10))
+    
+    # Channel and messaging
+    primary_channel = Column(String(20))
+    email_draft = Column(Text)
+    email_subject = Column(String(255))
+    whatsapp_draft = Column(Text)
+    
+    # State tracking
+    state = Column(String(50), default='DISCOVERED')  # DISCOVERED, ENRICHED, DRAFTED, QUEUED, SENT, WAITING, NO_REPLY, FOLLOW_UP_ELIGIBLE, REPLIED, CLOSED
+    is_queued = Column(Boolean, default=False)
+    queued_at = Column(DateTime)
+    sent_at = Column(DateTime)
+    last_interaction_at = Column(DateTime)
+    follow_up_count = Column(Float, default=0) # Using float just in case but int is fine
+    
+    # Metadata
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
-Base.metadata.create_all(bind=engine)
+    def __repr__(self):
+        return f"<Lead(name='{self.business_name}', state='{self.state}', channel='{self.primary_channel}')>"

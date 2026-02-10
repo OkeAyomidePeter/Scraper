@@ -1,151 +1,254 @@
 import os
+import logging
+import json
 import time
-import google.generativeai as genai
+from typing import Dict, Optional
+from google import genai
 from dotenv import load_dotenv
+from ratelimit import limits, sleep_and_retry
 
 load_dotenv()
 
-# Configure Gemini
-genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
+# Initialize logging
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
 
-class RateLimiter:
-    def __init__(self, rpm_limit=10, daily_limit=250):
-        self.rpm_limit = rpm_limit
-        self.daily_limit = daily_limit
-        self.request_times = []
-        self.daily_count = 0
-        self.last_reset = time.time()
+# Rate limiting configuration
+GEMINI_CALLS_PER_MINUTE = 15  # Gemini has higher limits
+ONE_MINUTE = 60
 
-    def _reset_daily_if_needed(self):
-        # Reset daily count every 24 hours
-        if time.time() - self.last_reset > 86400:
-            self.daily_count = 0
-            self.last_reset = time.time()
+# Configure API clients
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 
-    def wait_if_needed(self):
-        self._reset_daily_if_needed()
-        
-        if self.daily_count >= self.daily_limit:
-            print("Daily limit reached. 250/250 messages generated today.")
-            return False
+gemini_client = None
 
-        now = time.time()
-        # Filter requests from the last minute
-        self.request_times = [t for t in self.request_times if now - t < 60]
-        
-        if len(self.request_times) >= self.rpm_limit:
-            wait_time = 60 - (now - self.request_times[0])
-            if wait_time > 0:
-                print(f"Rate limit reached. Waiting {wait_time:.2f} seconds...")
-                time.sleep(wait_time)
-        
-        self.request_times.append(time.time())
-        self.daily_count += 1
-        return True
-
-# Global rate limiter
-limiter = RateLimiter(rpm_limit=10, daily_limit=250)
-
-def get_fallback_message(lead: dict) -> str:
-    """Provides a high-quality, personalized fallback when AI fails."""
-    business_name = lead.get("name", "there")
-    sender_name = "Oke Ayomide Peter"
-    company_name = "Invictus Global"
-    
-    # Simple logic to varied fallback
+if GEMINI_API_KEY:
     try:
-        rating = float(lead.get("rating", 0.0))
-    except:
-        rating = 0.0
-
-    if rating >= 4.0:
-        return (
-            f"Hello {business_name}! 👋 I'm {sender_name} from {company_name}. "
-            f"I saw your impressive {rating}-star rating on Google Maps. "
-            "I noticed you don't have a website yet—I help top-rated Nigerian businesses "
-            "build a professional digital home to reach even more customers. "
-            "Would you be open to a quick chat? 🚀"
-        )
-    else:
-        return (
-            f"Hello {business_name}! 👋 I'm {sender_name} from {company_name}. "
-            "I was looking at your business listing on Google Maps and noticed you "
-            "don't have a professional website yet. I help local businesses in Nigeria "
-            "build a digital presence that builds trust and brings in more customers. "
-            "Would you be open to a brief chat about this? ✨"
-        )
-
-def generate_outreach_message(lead: dict) -> str:
-    """
-    Generates a personalized outreach message using Google Gemini.
-    Returns a high-quality fallback if API fails or rate limit is reached.
-    """
-    if not limiter.wait_if_needed():
-        print(f"Rate limit hit for {lead.get('name')}. Using fallback.")
-        return get_fallback_message(lead)
-
-    business_name = lead.get("name", "there")
-    try:
-        rating = float(lead.get("rating", 0) or 0)
-    except (ValueError, TypeError):
-        rating = 0.0
-        
-    try:
-        reviews = int(lead.get("reviews", 0) or 0)
-    except (ValueError, TypeError):
-        reviews = 0
-        
-    category = lead.get("category", "business")
-    
-    sender_name = "Oke Ayomide Peter"
-    company_name = "Invictus Global"
-
-    # Reputation-aware Prompt Logic
-    if rating >= 4.0 and reviews >= 5:
-        reputation_focus = f"Reference their exceptional {rating}-star reputation and {reviews} reviews. Congratulate them."
-    elif rating > 0:
-        reputation_focus = f"Reference their {rating}-star rating as a great sign of trust."
-    else:
-        reputation_focus = "Focus on how a professional website establishes initial credibility."
-
-    model = genai.GenerativeModel('gemini-1.5-flash-lite')
-    
-    prompt = f"""
-    You are {sender_name}, representing {company_name}, a professional tech consultancy in Nigeria. 
-    Write a short, professional, warm WhatsApp message to {business_name}.
-    
-    Details: {business_name}, {category}, {rating} stars, {reviews} reviews.
-    Strategy: {reputation_focus}
-    
-    Trust-Building Context (Nigeria):
-    1. Introduce yourself clearly as {sender_name} from {company_name}.
-    2. Reference their specific Google Maps achievements genuinely.
-    3. Keep it warm but strictly professional. No 'Dear Sir/Ma'.
-    4. NO placeholders like '[Your Name]'.
-    
-    Length: CONCISE (WhatsApp optimized).
-    """
-
-    try:
-        response = model.generate_content(prompt)
-        # Verify response isn't empty or an error
-        if response and response.text:
-            return response.text.strip()
-        else:
-            raise ValueError("Empty AI response")
+        gemini_client = genai.Client(api_key=GEMINI_API_KEY)
+        logger.info("Gemini client initialized")
     except Exception as e:
-        print(f"AI Generation failed for {business_name}: {e}. Using fallback.")
-        return get_fallback_message(lead)
+        logger.warning(f"Failed to initialize Gemini client: {e}")
+
+# Company branding
+COMPANY_NAME = "Anchor Digitals"
+SENDER_NAME = "Peter"
+COMPANY_DESCRIPTION = "a tech company specializing in digital solutions for local Nigerian businesses"
+
+def build_email_prompt(lead_data: Dict) -> str:
+    """Builds the AI prompt for dynamic email generation."""
+    business_name = lead_data.get("name", "your business")
+    category = lead_data.get("category", "business")
+    city = lead_data.get("city") or "Abuja"
+    has_website = bool(lead_data.get("website"))
+    rating = lead_data.get("rating")
+    
+    # Build context based on available data
+    context_notes = []
+    if has_website:
+        context_notes.append(f"I noticed you have a website at {lead_data.get('website')}")
+    else:
+        context_notes.append("I noticed you don't currently have a website")
+    
+    if rating and rating != "0":
+        context_notes.append(f"and I saw your {rating}-star rating on Google")
+    
+    context_statement = " ".join(context_notes) + "."
+    
+    prompt = f"""You are {SENDER_NAME} from {COMPANY_NAME}, {COMPANY_DESCRIPTION}.
+
+You are writing a VERY DIRECT and ACTIONABLE outreach email to a {category} business in {city}, Nigeria.
+
+Business Details:
+- Name: {business_name}
+- Location: {city}
+- Category: {category}
+- Has Website: {"Yes" if has_website else "No"}
+
+Research Context:
+{context_statement}
+
+Your Task:
+1. Analyze this business type ({category}) and identify its most likely bottleneck (e.g., manual appointment tracking, poor online presence, or competition density in {city}).
+2. Write a punchy, high-conversion email (MAX 150 words) that:
+   - Skips the "I hope you are well" fluff.
+   - Identifies a specific gap based on your analysis.
+   - Offers a specific result local to {city} (e.g. "filling chairs" for salons, "securing bookings" for clinics).
+   - Clear Call to Action: Ask for a brief chat or mention you'll be in the area.
+   - Tone: Confident, Abuja-local, and professional.
+
+Rules:
+- NO passive language.
+- Use active language ("I saw", "We solve", "Let's chat").
+- Reference their {city} location.
+- Do not speak pidgin be stricly professional.
+
+Return ONLY valid JSON:
+{{
+  "subject": "Quick question for {business_name}",
+  "message": "email body here"
+}}
+"""
+    return prompt
+
+def build_whatsapp_prompt(lead_data: Dict) -> str:
+    """Builds the AI prompt for dynamic WhatsApp generation."""
+    business_name = lead_data.get("name", "your business")
+    category = lead_data.get("category", "business")
+    city = lead_data.get("city") or "Abuja"
+    has_website = bool(lead_data.get("website"))
+    rating = lead_data.get("rating")
+    
+    prompt = f"""You are {SENDER_NAME} from {COMPANY_NAME}, {COMPANY_DESCRIPTION}.
+
+You are writing a DIRECT WhatsApp message to {business_name}, a {category} in {city}.
+
+Research Context:
+- They {"have" if has_website else "don't have"} a website
+- Found on Google Maps{f' with a {rating} rating' if rating and rating != "0" else ''}
+
+Your Task:
+1. Identify a quick pain point relevant to a {category} in {city}.
+2. Write a brief, high-impact WhatsApp message (MAX 180 characters) that:
+   - "Abuja Local" opener: "Hi! Peter from Anchor Digitals here in Abuja."
+   - The Hook: Direct mention of a gap or their Maps presence.
+   - The Value: "We help local {category}s automate their appointments/lead flow."
+   - The CTA: "Can we chat for 2 mins?"
+
+Rules:
+- NO fluff. NO links.
+- Use Nigerian English nuances (Abuja local).
+- Under 180 chars.
+- Do not speak pidgin ,be strictly professional.
+
+Return ONLY valid JSON:
+{{
+  "message": "whatsapp message here"
+}}
+"""
+    return prompt
+
+def build_follow_up_prompt(lead_data: Dict) -> str:
+    """Builds the AI prompt for dynamic follow-up generation."""
+    business_name = lead_data.get("name", "your business")
+    category = lead_data.get("category", "business")
+    city = lead_data.get("city") or "Abuja"
+    channel = lead_data.get("follow_up_channel", "WHATSAPP")
+    
+    prompt = f"""You are {SENDER_NAME} from {COMPANY_NAME}, {COMPANY_DESCRIPTION}.
+
+You are writing a RESPECTFUL FOLLOW-UP (Nudge) message to {business_name}, a {category} in {city}.
+You contacted them a few days ago regarding digital solutions/automation but haven't heard back.
+
+Your Task:
+1. Write a brief, non-intrusive nudge (Email: MAX 80 words, WhatsApp: MAX 140 chars).
+2. Tone: Helpful, low-pressure, Abuja-local.
+3. Hook: "Just circling back" or "Checking if you saw my last message."
+4. Call to Action: "Is this something you'd be open to discussing briefly?"
+
+Rules:
+- NO guilt-tripping.
+- Keep it extremely short.
+- For WhatsApp, keep it under 140 characters.
+
+Return ONLY valid JSON:
+{{
+  "message": "follow-up message here",
+  "subject": "Quick follow up (if email)"
+}}
+"""
+    return prompt
+
+@sleep_and_retry
+@limits(calls=GEMINI_CALLS_PER_MINUTE, period=ONE_MINUTE)
+def generate_with_gemini(prompt: str, channel: str) -> Optional[Dict]:
+    """Attempts to generate message using Gemini with rate limiting."""
+    if not gemini_client:
+        return None
+    
+    try:
+        response = gemini_client.models.generate_content(
+            model='gemini-2.5-flash-lite',
+            contents=prompt
+        )
+        
+        response_text = response.text.strip()
+        
+        # Remove markdown code blocks
+        if response_text.startswith("```"):
+            lines = response_text.splitlines()
+            if lines[0].startswith("```"):
+                response_text = "\n".join(lines[1:-1])
+        
+        result = json.loads(response_text.strip())
+        logger.info(f"Generated {channel} message via Gemini")
+        return result
+        
+    except Exception as e:
+        logger.warning(f"Gemini generation failed: {e}")
+        return None
+
+def generate_message_fallback(lead_data: Dict, channel: str) -> Dict:
+    """Fallback template-based message generator."""
+    business_name = lead_data.get("name", "your business")
+    category = lead_data.get("category", "business")
+    
+    if channel == "EMAIL":
+        return {
+            "subject": f"Quick question about {business_name}",
+            "message": f"Hi there,\n\nI noticed {business_name} on Google Maps and wanted to reach out. I'm Peter from Anchor Digitals in Abuja.\n\nWe help local {category}s automate their systems so they don't miss out on clients. Are you free for a 5-minute call this week?\n\nBest,\nPeter"
+        }
+    elif channel == "WHATSAPP":
+        return {
+            "message": f"Hi! Peter from Anchor Digitals here. Found {business_name} on Maps. We help Abuja {category}s automate appointments. Open to a 2 min chat?"
+        }
+    return None
+
+def generate_message(lead_data: Dict, channel: str = "EMAIL") -> Optional[Dict]:
+    """Generates message using Gemini with dynamic analysis."""
+    try:
+        # Build prompt based on channel
+        if channel == "EMAIL":
+            prompt = build_email_prompt(lead_data)
+        elif channel == "WHATSAPP":
+            prompt = build_whatsapp_prompt(lead_data)
+        elif channel == "FOLLOW_UP":
+            prompt = build_follow_up_prompt(lead_data)
+        else:
+            logger.error(f"Unsupported channel: {channel}")
+            return None
+        
+        # Try Gemini as primary
+        result = generate_with_gemini(prompt, channel)
+        if result:
+            # Validate character limits
+            if channel == "WHATSAPP":
+                message = result.get("message", "")
+                if len(message) > 180:
+                    logger.warning(f"WhatsApp message exceeds 180 chars: {len(message)}")
+                    result["message"] = message[:177] + "..."
+            return result
+        
+        # Use template fallback
+        logger.info(f"Using template fallback for {channel} message")
+        result = generate_message_fallback(lead_data, channel)
+        return result
+        
+    except Exception as e:
+        logger.error(f"Error generating message: {e}")
+        return None
 
 if __name__ == "__main__":
-    # Test cases for different reputations
-    test_leads = [
-        {"name": "Elite Academy", "category": "School", "rating": "4.8", "reviews": "45"},
-        {"name": "Local Shop", "category": "Retail", "rating": "3.5", "reviews": "2"},
-        {"name": "New Business", "category": "Services", "rating": "0", "reviews": "0"}
-    ]
+    # Test with sample lead data
+    test_lead = {
+        "name": "Sunrise Dental Clinic",
+        "category": "Dental clinic",
+        "city": "Abuja",
+        "website": "",
+        "rating": "4.5"
+    }
     
-    for lead in test_leads:
-        print(f"\n--- Testing for: {lead['name']} ---")
-        print(generate_outreach_message(lead))
-        print("-" * 30)
+    print("\n--- EMAIL TEST ---")
+    print(generate_message(test_lead, channel="EMAIL"))
+    
+    print("\n--- WHATSAPP TEST ---")
+    print(generate_message(test_lead, channel="WHATSAPP"))

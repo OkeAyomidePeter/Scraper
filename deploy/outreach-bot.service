@@ -1,0 +1,14 @@
+[Unit]
+Description=Outreach Scraper Bot
+After=network.target
+
+[Service]
+User=ubuntu
+WorkingDirectory=/home/ubuntu/Scraper
+Environment=PATH=/home/ubuntu/.local/bin:/usr/bin:/bin
+ExecStart=/home/ubuntu/.local/bin/uv --project backend run python backend/main.py
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
