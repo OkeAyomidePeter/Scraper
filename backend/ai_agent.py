@@ -109,14 +109,14 @@ def build_whatsapp_prompt(lead_data: Dict) -> str:
 Write a brief, unique WhatsApp message to {business_name} (a {category} in {city}).
 
 CONTEXT:
-- Rating: {rating} on Google Maps.
-- Niche: {category}.
+- Rating: {rating}/5 on Google Maps. (NOTE: This is a quality score, NOT the business type).
+- Business Category: {category}.
 - Location: {city}.
 
 STRICT RULES:
 1. Opener: "Hi! Peter here from Anchor Digitals in {city}."
 2. The Hook: DO NOT use a template. Mention {business_name} and one specific challenge for {category} in Nigeria (e.g. manual bookings, missed calls).
-3. The Value: "We help {category}s here in Abuja automate their client flow."
+3. The Value: "We help {category} businesses here in Abuja automate their client flow." (CRITICAL: Never refer to the business as 'a 4.9' or 'a 4.3'. Use the category '{category}' instead).
 4. Call to Action: "Can we chat for 2 mins?"
 5. Under 180 characters.
 6. NO robotic language. Must sound human.

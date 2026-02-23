@@ -130,6 +130,12 @@ async def run_pipeline_cycle(db, processed_leads_cache):
             total_leads_processed += 1
             logger.info(f"Processed and saved: {lead_data['name']} (State: {lead_data['state']})")
         
+        # 8. Check Telegram queue after EACH query for real-time delivery
+        logger.info(f"Checking Telegram queue after query: {query}")
+        queued = await process_telegram_queue(db)
+        if queued > 0:
+            logger.info(f"Real-time delivery: Queued {queued} leads to Telegram.")
+        
         await asyncio.sleep(SCRAPER_DELAY)
 
     return total_leads_processed, total_messages_generated
