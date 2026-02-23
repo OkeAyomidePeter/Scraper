@@ -2,6 +2,7 @@ import asyncio
 import random
 import re
 import logging
+import urllib.parse
 from playwright.async_api import async_playwright
 from playwright_stealth import Stealth
 from utils import normalize_phone
@@ -111,6 +112,16 @@ async def scrape_google_maps(business_type: str, location: str, max_results: int
                         if href and not any(term in href for term in ["/aclk", "googleadservices", "google.com/maps"]):
                             website = href
 
+                    # Extract unique link for this business
+                    listing_url = ""
+                    link_el = await result.query_selector('a.hfpxzc')
+                    if link_el:
+                        listing_url = await link_el.get_attribute('href')
+                    
+                    if not listing_url:
+                        # Fallback if the standard selector fails
+                        listing_url = f"https://www.google.com/maps/search/{urllib.parse.quote(name)}"
+
                     lead = {
                         "name": name,
                         "category": category,
@@ -119,7 +130,7 @@ async def scrape_google_maps(business_type: str, location: str, max_results: int
                         "website": website,
                         "rating": rating,
                         "reviews": reviews,
-                        "maps_url": page.url
+                        "maps_url": listing_url
                     }
                     
                     leads.append(lead)

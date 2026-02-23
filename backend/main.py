@@ -23,11 +23,18 @@ ENRICHMENT_DELAY = 3  # seconds between enrichment calls
 
 async def run_pipeline_cycle(db, processed_leads_cache):
     """Runs a single cycle of scraping, enrichment, and drafting."""
+    # 1. Stop early if queue is already full/large to prevent spam
+    queue_count = db.query(Lead).filter(Lead.state == 'QUEUED').count()
+    draft_count = db.query(Lead).filter(Lead.state == 'DRAFTED').count()
+    if (queue_count + draft_count) >= 30: # 2 days worth of budget
+        logger.info(f"Queue is currently at {queue_count+draft_count} leads. Skipping discovery cycle to prevent backlog.")
+        return 0, 0
+
     # 2. Read queries from search.txt
     search_file = os.path.join(os.path.dirname(__file__), "search.txt")
     if not os.path.exists(search_file):
         logger.error(f"search.txt not found at {search_file}")
-        return
+        return 0, 0
 
     with open(search_file, "r") as f:
         queries = [line.strip() for line in f if line.strip()]
@@ -50,6 +57,7 @@ async def run_pipeline_cycle(db, processed_leads_cache):
         # 3. Scrape with rate limiting
         logger.info(f"Scraping: {business_type} in {location}")
         try:
+            # Only ask for a few leads per query to keep diversity high
             leads = await scrape_google_maps(business_type, location, max_results=10)
         except Exception as e:
             logger.error(f"Scraper error: {e}")
@@ -58,27 +66,20 @@ async def run_pipeline_cycle(db, processed_leads_cache):
         logger.info(f"Found {len(leads)} leads for '{query}'")
         
         for lead_data in leads:
-            # Check cache to avoid re-processing
+            # Check unique URL in DB
             maps_url = lead_data.get('maps_url')
-            if maps_url in processed_leads_cache:
-                continue
-            
-            # Additional DB check for safety (case where cache was lost)
             db_lead = db.query(Lead).filter(Lead.maps_url == maps_url).first()
             if db_lead:
-                processed_leads_cache.add(maps_url)
+                # Already exists, skip
                 continue
 
             logger.info(f"New business discovered: {lead_data['name']}")
-            
-            # Add city to lead data
             lead_data['city'] = location
             
-            # 4. Enrich if website exists (with rate limiting)
+            # 4. Enrich if website exists
             if lead_data.get('website'):
                 logger.info(f"Enriching {lead_data['name']} via {lead_data['website']}...")
                 await asyncio.sleep(ENRICHMENT_DELAY)
-                
                 try:
                     emails = await enrich_lead_with_email(lead_data['website'])
                     if emails:
@@ -86,22 +87,20 @@ async def run_pipeline_cycle(db, processed_leads_cache):
                         lead_data['state'] = 'ENRICHED'
                     else:
                         lead_data['state'] = 'DISCOVERED'
-                except Exception as e:
-                    logger.warning(f"Enrichment failed for {lead_data['name']}: {e}")
+                except Exception:
                     lead_data['state'] = 'DISCOVERED'
             else:
                 lead_data['state'] = 'DISCOVERED'
 
             # 5. Channel Decision
             channels = decide_channels(lead_data)
-            
             if not channels:
                 save_lead(db, lead_data)
-                processed_leads_cache.add(maps_url)
                 total_leads_processed += 1
                 continue
             
             # 6. AI Message Generation
+            all_generated = True
             for channel in channels:
                 logger.info(f"Generating {channel} message for {lead_data['name']}...")
                 message_result = generate_message(lead_data, channel=channel)
@@ -112,21 +111,24 @@ async def run_pipeline_cycle(db, processed_leads_cache):
                         lead_data['email_draft'] = message_result.get('message')
                     elif channel == "WHATSAPP":
                         lead_data['whatsapp_draft'] = message_result.get('message')
-                    
                     total_messages_generated += 1
                 else:
-                    logger.warning(f"Failed to generate {channel} message for {lead_data['name']}")
+                    logger.warning(f"AI Failed for {lead_data['name']} on {channel}")
+                    all_generated = False
+                    break # Stop if one channel fails
             
             # Update lead data state
-            if lead_data.get('email_draft') or lead_data.get('whatsapp_draft'):
+            if all_generated:
                 lead_data['primary_channel'] = channels[0]
                 lead_data['state'] = 'DRAFTED'
+            else:
+                # If AI fails, mark for human review instead of generic template
+                lead_data['state'] = 'NEEDS_REVIEW'
 
             # 7. Store in DB
             save_lead(db, lead_data)
-            processed_leads_cache.add(maps_url)
             total_leads_processed += 1
-            logger.info(f"Processed and saved: {lead_data['name']}")
+            logger.info(f"Processed and saved: {lead_data['name']} (State: {lead_data['state']})")
         
         await asyncio.sleep(SCRAPER_DELAY)
 
