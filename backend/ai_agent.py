@@ -152,10 +152,11 @@ Return ONLY valid JSON:
 @sleep_and_retry
 @limits(calls=GEMINI_CALLS_PER_MINUTE, period=ONE_MINUTE)
 def call_gemini_api(client: genai.Client, prompt: str, channel: str) -> Optional[Dict]:
-    """Single API call attempt."""
+    """Single API call attempt with error analysis."""
     try:
+        # Using gemini-2.5-flash-lite for cost-efficiency and high-volume stability
         response = client.models.generate_content(
-            model='gemini-2.0-flash-lite',
+            model='gemini-2.5-flash-lite',
             contents=prompt
         )
         response_text = response.text.strip()
@@ -165,7 +166,11 @@ def call_gemini_api(client: genai.Client, prompt: str, channel: str) -> Optional
                 response_text = "\n".join(lines[1:-1])
         return json.loads(response_text.strip())
     except Exception as e:
-        logger.warning(f"API Attempt failed: {e}")
+        error_msg = str(e)
+        if "429" in error_msg or "RESOURCE_EXHAUSTED" in error_msg:
+            logger.warning(f"Quota issue detected: {error_msg}")
+        else:
+            logger.error(f"Gemini API error ({channel}): {error_msg}")
         return None
 
 def generate_message(lead_data: Dict, channel: str = "EMAIL") -> Optional[Dict]:
@@ -198,7 +203,9 @@ def generate_message(lead_data: Dict, channel: str = "EMAIL") -> Optional[Dict]:
             increment_usage(idx)
             return result
         
-        # If we are here, this key failed. We'll try the next one in the next iteration of the loop.
+        # If we are here, this key failed. We'll wait a bit and try the next one.
+        logger.warning(f"Key {idx} failed. Pacing rotation...")
+        time.sleep(2)
     
     # Step 3: All keys failed or exhausted
     logger.error(f"All {len(GEMINI_KEYS)} keys failed or reached daily limit. Marking for review.")
